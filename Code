@@ -1,0 +1,35 @@
+def MA_Strategy(stock,start,end,MAF,MAS):
+data = pdr.get_data_yahoo(stock, start=start, end=end)
+data['Log Returns'] = np.log(data['Adj Close']/data['Adj Close'].shift(1)) data.dropna(inplace=True)
+data['MASlow'] = data['Adj Close'].rolling(MAS).mean() data['MAFast'] = data['Adj Close'].rolling(MAF).mean() data.dropna(inplace=True)
+data['Signal'] = np.where(data['MAFast']>data['MASlow'],1,-1) data.dropna(inplace=True)
+data['Strategy Log Returns'] = data['Log Returns'] * data['Signal'].shift(1) data.dropna(inplace=True)
+
+def calc_rsi(over: pd.Series, fn_roll: Callable) -> pd.Series: # Get the difference in price from previous step
+delta = over.diff()
+# Get rid of the first row, which is NaN since it did not have a previous row to calculate the differences
+delta = delta[1:]
+# Make the positive gains (up) and negative gains (down) Series up, down = delta.clip(lower=0), delta.clip(upper=0).abs()
+roll_up, roll_down = fn_roll(up), fn_roll(down) rs = roll_up / roll_down
+rsi = 100.0 - (100.0 / (1.0 + rs))
+# Avoid division-by-zero if `roll_down` is zero # This prevents inf and/or nan values.
+rsi[:] = np.select([roll_down == 0, roll_up == 0, True], [100, 0, rsi]) rsi.name = 'rsi'
+# Assert range
+valid_rsi = rsi[length - 1:]
+assert ((0 <= valid_rsi) & (valid_rsi <= 100)).all()
+# Note: rsi[:length - 1] is excluded from above assertion because it is NaN for SMA. 
+return rsi
+
+# Calculate RSI using MA of choice
+# Reminder: Provide ≥ `1 + length` extra data points!
+rsi_ema = calc_rsi(close, lambda s: s.ewm(span=length).mean()) rsi_sma = calc_rsi(close, lambda s: s.rolling(length).mean())
+
+rsi_rma = calc_rsi(close, lambda s: s.ewm(alpha=1 / length).mean()) # Approximates TradingView.
+
+ticker = pdr.get_data_yahoo("AAPL", dt.datetime(2020, 1, 1), dt.datetime.now())[['Close', 'High', 'Low']]
+# Boillinger band calculations
+ticker['TP'] = (ticker['Close'] + ticker['Low'] + ticker['High'])/3 ticker['std'] = ticker['TP'].rolling(20).std(ddof=0)
+ticker['MA-TP'] = ticker['TP'].rolling(20).mean()
+
+ticker['BOLU'] = ticker['MA-TP'] + 2*ticker['std'] ticker['BOLD'] = ticker['MA-TP'] - 2*ticker['std'] ticker = ticker.dropna()
+print(ticker)
